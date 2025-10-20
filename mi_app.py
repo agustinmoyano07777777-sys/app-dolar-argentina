@@ -19,7 +19,8 @@ st.markdown(
 
 # --- Título y Descripción ---
 st.title("💵 Comparador Interactivo de Dólares en Argentina")
-st.markdown("Visualiza y compara las cotizaciones históricas, la brecha cambiaria y las variaciones diarias del dólar. **La página se actualiza cada 20 minutos.**")
+st.markdown("Visualiza y compara las cotizaciones históricas, la brecha cambiaria y las variaciones diarias del dólar. **La página se actualiza cada 20 minutos.**"
+           by Agus.M)
 
 # --- Carga y Procesamiento de Datos ---
 @st.cache_data(ttl=refresh_interval_seconds)

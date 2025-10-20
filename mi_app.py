@@ -76,10 +76,11 @@ if datos_dolar is not None and not datos_dolar.empty:
         if brecha_seleccionada:
             st.line_chart(df_brecha[brecha_seleccionada])
 
-    # --- SECCIÓN 3: Gráfico de Variaciones Diarias (FORMATO DE FECHA CORREGIDO) ---
+    # --- SECCIÓN 3: Gráfico de Variaciones Diarias (LÓGICA CORREGIDA) ---
     st.header("📉 Variación Diaria Porcentual (%)")
     st.markdown("Muestra el cambio porcentual de cada cotización respecto al día anterior. Los fines de semana se muestran con 0% de variación.")
     
+    # Calculamos la variación porcentual diaria
     df_variaciones = datos_dolar.pct_change() * 100
     
     variaciones_seleccionadas = st.multiselect(
@@ -90,20 +91,24 @@ if datos_dolar is not None and not datos_dolar.empty:
     )
 
     if variaciones_seleccionadas:
-        df_variaciones_continuas = df_variaciones.resample('D').asfreq().fillna(0)
-        df_grafico = df_variaciones_continuas[variaciones_seleccionadas].tail(90)
+        # 1. Rellenamos los días no laborables para tener una línea de tiempo continua
+        df_variaciones_continuas = df_variaciones[variaciones_seleccionadas].resample('D').asfreq().fillna(0)
         
-        # --- LÍNEA MODIFICADA ---
-        # Cambiamos el formato de la fecha al formato DD/MM/AA
-        df_grafico.index = df_grafico.index.strftime('%d/%m/%y')
+        # 2. Seleccionamos los últimos 90 días de datos para el gráfico
+        df_grafico = df_variaciones_continuas.tail(90)
         
+        # 3. GRAFICAMOS DIRECTAMENTE. Streamlit se encargará de ordenar y formatear el índice de fechas correctamente.
         st.bar_chart(df_grafico)
+        
     else:
         st.warning("Selecciona al menos una cotización para mostrar su variación.")
 
     # --- SECCIÓN 4: Tabla de Datos (Opcional) ---
     with st.expander("Ver Tabla con los Últimos Datos"):
-        st.dataframe(datos_dolar.sort_index(ascending=False).head(20).round(2), use_container_width=True)
+        # Mostramos la tabla con las fechas como texto en un formato claro para evitar la hora
+        df_tabla = datos_dolar.sort_index(ascending=False).head(20).round(2)
+        df_tabla.index = df_tabla.index.strftime('%Y-%m-%d')
+        st.dataframe(df_tabla, use_container_width=True)
 
 else:
     st.error("No se pudieron cargar los datos necesarios. Por favor, intenta refrescar la página en unos minutos.")

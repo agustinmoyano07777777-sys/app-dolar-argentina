@@ -94,7 +94,7 @@ if datos_dolar is not None and not datos_dolar.empty and datos_pf is not None an
     else:
         st.warning("Selecciona al menos una cotización para ver el spread.")
 
-    # --- SECCIÓN COMPARATIVA (CORREGIDA Y MEJORADA) ---
+    # --- SECCIÓN COMPARATIVA (LÓGICA CORREGIDA) ---
     st.header("🔬 Comparativa: Dólar vs. Plazo Fijo")
     st.markdown("Análisis histórico para determinar qué inversión fue más rentable en un período determinado.")
 
@@ -106,26 +106,28 @@ if datos_dolar is not None and not datos_dolar.empty and datos_pf is not None an
         periodo_dias = st.number_input("Selecciona el período de análisis (días):", min_value=1, max_value=365, value=30)
 
     if dolar_a_comparar and periodo_dias:
-        # Usamos df_calculo para todos los pasos intermedios
-        df_calculo = df_completo[[dolar_a_comparar, 'TNA Plazo Fijo']].copy().dropna()
+        # 1. Resamplear a frecuencia DIARIA para rellenar fines de semana y poder usar shift() correctamente.
+        df_daily = df_completo[[dolar_a_comparar, 'TNA Plazo Fijo']].resample('D').ffill()
+        
+        # 2. Calcular el valor inicial (hace 'periodo_dias' días)
+        df_daily[f'{dolar_a_comparar} Inicial'] = df_daily[dolar_a_comparar].shift(periodo_dias)
+        
+        # 3. Nos quedamos solo con los días que originalmente tenían datos
+        df_calculo = df_daily.loc[df_completo.index].copy()
         df_calculo = df_calculo.sort_index(ascending=False)
 
-        # 1. Crear columnas con valores iniciales
-        df_calculo[f'{dolar_a_comparar} Inicial'] = df_calculo[dolar_a_comparar].shift(-periodo_dias)
-        df_calculo['Fecha Inicial'] = df_calculo.index.to_series().shift(-periodo_dias)
-
-        # 2. Renombrar columnas finales para claridad
-        df_calculo = df_calculo.rename(columns={dolar_a_comparar: f'{dolar_a_comparar} Final'})
-        df_calculo['Fecha Final'] = df_calculo.index
-
-        # 3. Eliminar filas que no tienen un período completo para calcular
-        df_calculo = df_calculo.dropna(subset=['Fecha Inicial', f'{dolar_a_comparar} Inicial'])
+        # 4. Eliminar las filas más recientes que no tienen un período completo para comparar
+        df_calculo = df_calculo.dropna(subset=[f'{dolar_a_comparar} Inicial'])
         
-        # 4. Calcular variaciones
+        # 5. Añadir columnas de fecha y renombrar para claridad
+        df_calculo['Fecha Inicial'] = df_calculo.index - pd.to_timedelta(periodo_dias, unit='d')
+        df_calculo = df_calculo.rename(columns={'index': 'Fecha Final', dolar_a_comparar: f'{dolar_a_comparar} Final'})
+        
+        # 6. Calcular los rendimientos
         df_calculo['Variación Dólar %'] = ((df_calculo[f'{dolar_a_comparar} Final'] / df_calculo[f'{dolar_a_comparar} Inicial']) - 1) * 100
         df_calculo['Rendimiento PF %'] = (df_calculo['TNA Plazo Fijo'] / 365) * periodo_dias
 
-        # 5. Determinar ganador
+        # 7. Determinar el ganador
         def determinar_ganador(row):
             if row['Variación Dólar %'] > 1.0 and row['Variación Dólar %'] > row['Rendimiento PF %']:
                 return "🟢 Dólar"
@@ -135,15 +137,16 @@ if datos_dolar is not None and not datos_dolar.empty and datos_pf is not None an
                 return "⚪ Empate / Dólar < 1%"
         df_calculo['Conclusión'] = df_calculo.apply(determinar_ganador, axis=1)
 
-        # 6. Preparar DataFrame final para mostrar
+        # 8. Preparar DataFrame final para mostrar
         columnas_finales = [
-            'Fecha Inicial', 'Fecha Final', f'{dolar_a_comparar} Inicial', f'{dolar_a_comparar} Final',
+            'Fecha Inicial', f'{dolar_a_comparar} Inicial', f'{dolar_a_comparar} Final',
             'Variación Dólar %', 'Rendimiento PF %', 'Conclusión'
         ]
-        df_display = df_calculo[columnas_finales].head(20)
+        # .reset_index() convierte el índice 'Fecha Final' en una columna
+        df_display = df_calculo.reset_index()[['index'] + columnas_finales]
+        df_display = df_display.rename(columns={'index': 'Fecha Final'})
 
-        # 7. Formatear para una mejor visualización
-        st.dataframe(df_display.style.format({
+        st.dataframe(df_display.head(20).style.format({
             f'{dolar_a_comparar} Inicial': '${:,.2f}',
             f'{dolar_a_comparar} Final': '${:,.2f}',
             'Variación Dólar %': '{:,.2f}%',

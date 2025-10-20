@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import requests
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 
 # --- Configuración de la Página ---
 st.set_page_config(
@@ -14,6 +14,7 @@ st.title("💵 Monitor y Comparador: Dólar vs. Plazo Fijo")
 st.markdown("Herramienta para analizar cotizaciones históricas y comparar el rendimiento del dólar contra un plazo fijo.")
 
 # --- Funciones de Carga y Procesamiento de Datos ---
+# Se añade un cacheo para no llamar a la API en cada interacción, sino cada 1 hora.
 @st.cache_data(ttl=3600)
 def cargar_datos_dolar():
     url = 'https://api.argentinadatos.com/v1/cotizaciones/dolares'
@@ -68,30 +69,29 @@ if datos_dolar is not None and not datos_dolar.empty and datos_pf is not None an
     st.subheader("Filtro de Fechas")
     col_f1, col_f2 = st.columns(2)
     
-    # --- BLOQUE DE CÓDIGO CORREGIDO ---
+    # --- LÓGICA DE FECHAS CORREGIDA ---
+    # Se establece la fecha de HOY como el límite máximo
+    hoy = date.today()
     fecha_minima_disponible = df_completo.index.min().date()
-    fecha_maxima_disponible = df_completo.index.max().date()
-
-    # Calculamos un valor por defecto seguro para la fecha de inicio.
-    valor_defecto_inicio = max(fecha_minima_disponible, fecha_maxima_disponible - timedelta(days=365))
+    
+    # El valor por defecto es 'hace un año', pero nunca antes de la primera fecha con datos.
+    valor_defecto_inicio = max(fecha_minima_disponible, hoy - timedelta(days=365))
 
     with col_f1:
         fecha_inicio = st.date_input(
             "Mostrar resultados DESDE:", 
             value=valor_defecto_inicio, 
             min_value=fecha_minima_disponible, 
-            max_value=fecha_maxima_disponible
+            max_value=hoy # Límite superior es hoy
         )
     with col_f2:
         fecha_fin = st.date_input(
             "Mostrar resultados HASTA:", 
-            value=fecha_maxima_disponible, 
+            value=hoy, # El valor por defecto es hoy
             min_value=fecha_minima_disponible, 
-            max_value=fecha_maxima_disponible
+            max_value=hoy # Límite superior también es hoy
         )
     
-    # --- FIN DEL BLOQUE CORREGIDO ---
-
     if dolar_a_comparar and periodo_dias and fecha_inicio <= fecha_fin:
         df_daily = df_completo.resample('D').ffill()
         df_daily[f'{dolar_a_comparar} Inicial'] = df_daily[dolar_a_comparar].shift(periodo_dias)
@@ -135,6 +135,7 @@ if datos_dolar is not None and not datos_dolar.empty and datos_pf is not None an
 
     with st.expander("Ver Gráficos y Datos Históricos Adicionales"):
         st.header("📈 Gráfico de Cotizaciones Históricas")
+        # El uso de 'key' evita conflictos entre widgets si son iguales
         opciones_disponibles = datos_dolar.columns.tolist()
         opciones_preferidas = ['Oficial', 'Blue', 'Mep', 'Ccl']
         opciones_por_defecto_hist = [opt for opt in opciones_preferidas if opt in opciones_disponibles]

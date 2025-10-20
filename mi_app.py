@@ -75,20 +75,17 @@ if datos_dolar is not None and not datos_dolar.empty:
     st.header("📉 Variación Diaria Porcentual (%)")
     st.markdown("Usa los filtros para explorar la volatilidad en un período específico de todo el historial.")
     
-    # Pre-cálculo de las variaciones
     df_variaciones = datos_dolar.pct_change() * 100
     df_variaciones_continuas = df_variaciones.resample('D').asfreq().fillna(0)
     
-    # Selector de cotizaciones para esta sección
     variaciones_seleccionadas = st.multiselect(
         'Selecciona las cotizaciones para el análisis de volatilidad:',
         options=opciones_disponibles, default=opciones_default, key='variaciones_multiselect'
     )
     
-    # --- FILTRO DE FECHAS PARA ESTE GRÁFICO ---
     fecha_minima = df_variaciones_continuas.index.min().date()
     fecha_maxima = df_variaciones_continuas.index.max().date()
-    fecha_default_inicio = max(fecha_minima, fecha_maxima - timedelta(days=365)) # Por defecto, último año
+    fecha_default_inicio = max(fecha_minima, fecha_maxima - timedelta(days=365))
     
     col1, col2 = st.columns(2)
     with col1:
@@ -96,12 +93,14 @@ if datos_dolar is not None and not datos_dolar.empty:
     with col2:
         fecha_fin = st.date_input("Hasta:", value=fecha_maxima, min_value=fecha_minima, max_value=fecha_maxima, key='var_end_date')
 
+    # --- BLOQUE CORREGIDO ---
+    # Se verifica si hay selecciones y si el rango de fechas es válido.
     if variaciones_seleccionadas and fecha_inicio <= fecha_fin:
-        # Filtrar el DataFrame según el rango de fechas seleccionado por el usuario
         df_filtrado = df_variaciones_continuas[variaciones_seleccionadas][fecha_inicio:fecha_fin]
         st.bar_chart(df_filtrado)
     else:
-        st.warning("Selecciona al menos una cotización para mostrar el gráfico de variación.")
+        # Este es el bloque que faltaba. Provee un feedback útil al usuario.
+        st.warning("Por favor, selecciona al menos una cotización y asegúrate de que el rango de fechas sea válido.")
 
     # --- SECCIÓN 4: Tabla de Datos ---
     with st.expander("Ver Tabla con los Últimos Datos"):
@@ -110,3 +109,4 @@ if datos_dolar is not None and not datos_dolar.empty:
         st.dataframe(df_tabla, use_container_width=True)
 
 else:
+    st.error("No se pudieron cargar los datos necesarios. Intenta refrescar la página en unos minutos.")

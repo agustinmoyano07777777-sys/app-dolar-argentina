@@ -43,20 +43,22 @@ def cargar_datos_plazo_fijo():
         response = requests.get(url)
         response.raise_for_status()
         data = response.json()
-        df = pd.DataFrame(data)
+        # --- LÍNEA CORREGIDA ---
+        # Le decimos a Pandas cómo nombrar las columnas, ya que esta API no lo especifica.
+        df = pd.DataFrame(data, columns=['fecha', 'valor'])
+        
         df['fecha'] = pd.to_datetime(df['fecha'])
         df = df.set_index('fecha')
-        # Renombramos la columna para mayor claridad
         df = df.rename(columns={'valor': 'TNA Plazo Fijo'})
-        # Convertimos la TNA a valor porcentual
-        df['TNA Plazo Fijo'] = df['TNA Plazo Fijo']
         return df
     except requests.exceptions.RequestException as e:
         st.error(f"Error al conectar con la API de tasas de plazo fijo: {e}")
         return None
+    # El KeyError se captura aquí como una Exception genérica
     except Exception as e:
         st.error(f"Ocurrió un error al procesar los datos de plazo fijo: {e}")
         return None
+
 
 # --- Carga de Datos ---
 with st.spinner('Cargando datos históricos desde las APIs...'):
@@ -68,10 +70,9 @@ if datos_dolar is not None and not datos_dolar.empty and datos_pf is not None an
     st.success("¡Datos del dólar y plazo fijo cargados correctamente!")
 
     # Combinamos ambos DataFrames
-    # Usamos un join 'outer' y luego rellenamos hacia adelante para tener tasas en fines de semana
     df_completo = datos_dolar.join(datos_pf, how='outer').sort_index()
     df_completo['TNA Plazo Fijo'] = df_completo['TNA Plazo Fijo'].ffill()
-    df_completo = df_completo.dropna(subset=datos_dolar.columns) # Eliminamos filas donde no hay datos de dolar
+    df_completo = df_completo.dropna(subset=datos_dolar.columns)
 
     # --- Gráfico de Cotizaciones Históricas ---
     st.header("📈 Gráfico de Cotizaciones Históricas (Valor de Venta)")
@@ -113,7 +114,6 @@ if datos_dolar is not None and not datos_dolar.empty and datos_pf is not None an
 
     col1, col2 = st.columns(2)
     with col1:
-        # Dejamos solo las opciones que nos interesan para la comparación
         opciones_dolar_comparativa = [d for d in ['Blue', 'Mep', 'Ccl'] if d in df_completo.columns]
         dolar_a_comparar = st.selectbox(
             "Selecciona el tipo de dólar a comparar:",
@@ -131,35 +131,21 @@ if datos_dolar is not None and not datos_dolar.empty and datos_pf is not None an
     if dolar_a_comparar and periodo_dias:
         df_comparativa = df_completo[[dolar_a_comparar, 'TNA Plazo Fijo']].copy().dropna()
         df_comparativa = df_comparativa.sort_index(ascending=False)
-
-        # Cálculos
-        df_comparativa[f'{dolar_a_comparar} Final'] = df_comparativa[dolar_a_comparar]
-        # Usamos shift para obtener el valor de 'hace N dias'
+        
         df_comparativa[f'{dolar_a_comparar} Inicial'] = df_comparativa[dolar_a_comparar].shift(-periodo_dias)
-        
-        # Obtenemos la fecha inicial correspondiente
         df_comparativa['Fecha Inicial'] = df_comparativa.index.to_series().shift(-periodo_dias)
-        df_comparativa['Fecha Final'] = df_comparativa.index
 
-        # Cálculo de la variación del dólar
+        df_comparativa = df_comparativa.dropna(subset=[f'{dolar_a_comparar} Inicial', 'Fecha Inicial'])
+
         df_comparativa['Variación Dólar %'] = (
-            (df_comparativa[f'{dolar_a_comparar} Final'] / df_comparativa[f'{dolar_a_comparar} Inicial']) - 1
+            (df_comparativa[dolar_a_comparar] / df_comparativa[f'{dolar_a_comparar} Inicial']) - 1
         ) * 100
-
-        # Rendimiento del plazo fijo para el período seleccionado
-        # TNA / 365 * período_dias
-        df_comparativa['Rendimiento PF %'] = (df_comparativa['TNA Plazo Fijo'] / 365) * periodo_dias
         
-        # Limpiamos filas sin datos para el período completo
-        df_comparativa = df_comparativa.dropna(
-            subset=[f'{dolar_a_comparar} Inicial', 'Fecha Inicial']
-        )
+        df_comparativa['Rendimiento PF %'] = (df_comparativa['TNA Plazo Fijo'] / 365) * periodo_dias
 
-        # Aplicamos la lógica de comparación
         def determinar_ganador(row):
             variacion_dolar = row['Variación Dólar %']
             rendimiento_pf = row['Rendimiento PF %']
-            # Tu lógica: si el dólar sube más de un 1%, ya es mejor
             if variacion_dolar > 1.0 and variacion_dolar > rendimiento_pf:
                 return "🟢 Dólar"
             elif rendimiento_pf > variacion_dolar:
@@ -169,19 +155,28 @@ if datos_dolar is not None and not datos_dolar.empty and datos_pf is not None an
 
         df_comparativa['Conclusión'] = df_comparativa.apply(determinar_ganador, axis=1)
 
-        # Seleccionamos y renombramos las columnas para mostrar
-        columnas_a_mostrar = [
-            'Fecha Inicial', 'Fecha Final',
-            f'{dolar_a_comparar} Inicial', f'{dolar_a_comparar} Final',
-            'Variación Dólar %', 'TNA Plazo Fijo', 'Rendimiento PF %', 'Conclusión'
-        ]
+        columnas_a_mostrar = {
+            'Fecha Inicial': 'Fecha Inicial',
+            'index': 'Fecha Final',
+            f'{dolar_a_comparar} Inicial': f'{dolar_a_comparar} Inicial',
+            dolar_a_comparar: f'{dolar_a_comparar} Final',
+            'Variación Dólar %': 'Var. Dólar %',
+            'TNA Plazo Fijo': 'TNA Vigente',
+            'Rendimiento PF %': 'Rend. PF %',
+            'Conclusión': 'Conclusión'
+        }
 
-        df_display = df_comparativa[columnas_a_mostrar].copy()
-        df_display['TNA Plazo Fijo'] = df_display['TNA Plazo Fijo'].map('{:,.2f}%'.format)
-        df_display['Rendimiento PF %'] = df_display['Rendimiento PF %'].map('{:,.2f}%'.format)
-        df_display['Variación Dólar %'] = df_display['Variación Dólar %'].map('{:,.2f}%'.format)
+        df_display = df_comparativa.reset_index()[list(columnas_a_mostrar.keys())].rename(columns=columnas_a_mostrar)
 
-        st.dataframe(df_display.head(20)) # Mostramos los 20 períodos más recientes
+        formatters = {
+            'Var. Dólar %': '{:,.2f}%'.format,
+            'TNA Vigente': '{:,.2f}%'.format,
+            'Rend. PF %': '{:,.2f}%'.format,
+            f'{dolar_a_comparar} Inicial': '${:,.2f}'.format,
+            f'{dolar_a_comparar} Final': '${:,.2f}'.format
+        }
+
+        st.dataframe(df_display.head(20).style.format(formatters), use_container_width=True)
 
     # --- Mostrar Datos Crudos en una Tabla ---
     st.header("📋 Tabla de Datos Históricos")

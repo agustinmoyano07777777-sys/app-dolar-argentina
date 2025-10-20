@@ -9,12 +9,31 @@ st.set_page_config(
     layout="wide"
 )
 
+# --- INICIO: CÓDIGO DE AUTO-REFRESCO ---
+# Define el intervalo de refresco en segundos (20 minutos = 1200 segundos)
+refresh_interval_seconds = 1200
+
+# Se inyecta un pequeño bloque de HTML con JavaScript para recargar la página
+st.markdown(
+    f"""
+    <script>
+        setTimeout(function() {{
+            window.location.reload();
+        }}, {refresh_interval_seconds * 1000});
+    </script>
+    """,
+    unsafe_allow_html=True,
+)
+# --- FIN: CÓDIGO DE AUTO-REFRESCO ---
+
+
 # --- Título y Descripción ---
 st.title("💵 Comparador Interactivo de Dólares en Argentina")
-st.markdown("Visualiza y compara las cotizaciones históricas, la brecha cambiaria y las variaciones diarias del dólar.")
+st.markdown("Visualiza y compara las cotizaciones históricas, la brecha cambiaria y las variaciones diarias del dólar. **Esta página se actualizará automáticamente cada 20 minutos.**")
 
 # --- Carga y Procesamiento de Datos ---
-@st.cache_data(ttl=3600)  # Cachear los datos por 1 hora
+# Se ajusta el tiempo de la caché para que coincida con el refresco
+@st.cache_data(ttl=refresh_interval_seconds)
 def cargar_y_procesar_datos():
     """Carga y procesa los datos de la API en un DataFrame de Pandas."""
     url = 'https://api.argentinadatos.com/v1/cotizaciones/dolares'
@@ -45,7 +64,7 @@ with st.spinner('Cargando datos históricos desde la API...'):
     datos_dolar = cargar_y_procesar_datos()
 
 if datos_dolar is not None and not datos_dolar.empty:
-    st.success("¡Datos cargados y procesados correctamente!")
+    st.success(f"¡Datos cargados y procesados correctamente! Próxima actualización en 20 minutos.")
 
     opciones_disponibles = datos_dolar.columns.tolist()
     opciones_default = [opt for opt in ['Oficial', 'Blue', 'Mep', 'Ccl'] if opt in opciones_disponibles]
@@ -76,11 +95,10 @@ if datos_dolar is not None and not datos_dolar.empty:
         if brecha_seleccionada:
             st.line_chart(df_brecha[brecha_seleccionada])
 
-    # --- SECCIÓN 3: Gráfico de Variaciones Diarias (LÓGICA CORREGIDA) ---
+    # --- SECCIÓN 3: Gráfico de Variaciones Diarias ---
     st.header("📉 Variación Diaria Porcentual (%)")
     st.markdown("Muestra el cambio porcentual de cada cotización respecto al día anterior. Los fines de semana se muestran con 0% de variación.")
     
-    # Calculamos la variación porcentual diaria
     df_variaciones = datos_dolar.pct_change() * 100
     
     variaciones_seleccionadas = st.multiselect(
@@ -91,13 +109,8 @@ if datos_dolar is not None and not datos_dolar.empty:
     )
 
     if variaciones_seleccionadas:
-        # 1. Rellenamos los días no laborables para tener una línea de tiempo continua
         df_variaciones_continuas = df_variaciones[variaciones_seleccionadas].resample('D').asfreq().fillna(0)
-        
-        # 2. Seleccionamos los últimos 90 días de datos para el gráfico
         df_grafico = df_variaciones_continuas.tail(90)
-        
-        # 3. GRAFICAMOS DIRECTAMENTE. Streamlit se encargará de ordenar y formatear el índice de fechas correctamente.
         st.bar_chart(df_grafico)
         
     else:
@@ -105,7 +118,6 @@ if datos_dolar is not None and not datos_dolar.empty:
 
     # --- SECCIÓN 4: Tabla de Datos (Opcional) ---
     with st.expander("Ver Tabla con los Últimos Datos"):
-        # Mostramos la tabla con las fechas como texto en un formato claro para evitar la hora
         df_tabla = datos_dolar.sort_index(ascending=False).head(20).round(2)
         df_tabla.index = df_tabla.index.strftime('%Y-%m-%d')
         st.dataframe(df_tabla, use_container_width=True)

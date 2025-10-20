@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import requests
-import locale # Importamos el módulo para configurar el idioma
 
 # --- Configuración de la Página de Streamlit ---
 st.set_page_config(
@@ -9,18 +8,6 @@ st.set_page_config(
     page_icon="💵",
     layout="wide"
 )
-
-# --- CONFIGURACIÓN DE IDIOMA PARA LAS FECHAS ---
-# Intentamos configurar el locale a español. Esto es clave para que los nombres de los días y meses aparezcan en español.
-try:
-    locale.setlocale(locale.LC_TIME, 'es_ES.UTF-8')
-except locale.Error:
-    try:
-        # Un fallback común si el primer locale no está disponible
-        locale.setlocale(locale.LC_TIME, 'es')
-    except locale.Error:
-        # Advertencia si no se puede configurar, las fechas saldrán en inglés
-        st.warning("No se pudo configurar el idioma español para las fechas. Se mostrarán en el formato por defecto.")
 
 # --- Título y Descripción ---
 st.title("💵 Comparador Interactivo de Dólares en Argentina")
@@ -89,7 +76,7 @@ if datos_dolar is not None and not datos_dolar.empty:
         if brecha_seleccionada:
             st.line_chart(df_brecha[brecha_seleccionada])
 
-    # --- SECCIÓN 3: Gráfico de Variaciones Diarias (CON FECHAS CORREGIDAS) ---
+    # --- SECCIÓN 3: Gráfico de Variaciones Diarias (FORMATO DE FECHA CORREGIDO) ---
     st.header("📉 Variación Diaria Porcentual (%)")
     st.markdown("Muestra el cambio porcentual de cada cotización respecto al día anterior. Los fines de semana se muestran con 0% de variación.")
     
@@ -103,15 +90,12 @@ if datos_dolar is not None and not datos_dolar.empty:
     )
 
     if variaciones_seleccionadas:
-        # 1. Resamplear a frecuencia diaria y rellenar fines de semana con 0 variación.
         df_variaciones_continuas = df_variaciones.resample('D').asfreq().fillna(0)
-        
-        # 2. Seleccionar solo las columnas elegidas y los últimos 90 días para que sea legible.
         df_grafico = df_variaciones_continuas[variaciones_seleccionadas].tail(90)
         
-        # 3. Formatear el índice (las fechas) al formato español "Día, DD de Mes" (ej: "lun, 20 de oct").
-        # strftime() utiliza la configuración de 'locale' que establecimos al inicio.
-        df_grafico.index = df_grafico.index.strftime('%a, %d de %b') 
+        # --- LÍNEA MODIFICADA ---
+        # Cambiamos el formato de la fecha al formato DD/MM/AA
+        df_grafico.index = df_grafico.index.strftime('%d/%m/%y')
         
         st.bar_chart(df_grafico)
     else:

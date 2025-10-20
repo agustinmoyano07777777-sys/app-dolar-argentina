@@ -19,8 +19,7 @@ st.markdown(
 
 # --- Título y Descripción ---
 st.title("💵 Comparador Interactivo de Dólares en Argentina")
-st.markdown("Visualiza y compara las cotizaciones históricas, la brecha cambiaria y las variaciones diarias del dólar. **La página se actualiza cada 20 minutos.**"
-            by Agus.M")
+st.markdown("Visualiza y compara las cotizaciones históricas, la brecha cambiaria y las variaciones diarias del dólar. **La página se actualiza cada 20 minutos.**")
 
 # --- Carga y Procesamiento de Datos ---
 @st.cache_data(ttl=refresh_interval_seconds)
@@ -94,13 +93,10 @@ if datos_dolar is not None and not datos_dolar.empty:
     with col2:
         fecha_fin = st.date_input("Hasta:", value=fecha_maxima, min_value=fecha_minima, max_value=fecha_maxima, key='var_end_date')
 
-    # --- BLOQUE CORREGIDO ---
-    # Se verifica si hay selecciones y si el rango de fechas es válido.
     if variaciones_seleccionadas and fecha_inicio <= fecha_fin:
         df_filtrado = df_variaciones_continuas[variaciones_seleccionadas][fecha_inicio:fecha_fin]
         st.bar_chart(df_filtrado)
     else:
-        # Este es el bloque que faltaba. Provee un feedback útil al usuario.
         st.warning("Por favor, selecciona al menos una cotización y asegúrate de que el rango de fechas sea válido.")
 
     # --- SECCIÓN 4: Tabla de Datos ---
@@ -108,6 +104,18 @@ if datos_dolar is not None and not datos_dolar.empty:
         df_tabla = datos_dolar.sort_index(ascending=False).head(20).round(2)
         df_tabla.index = df_tabla.index.strftime('%Y-%m-%d')
         st.dataframe(df_tabla, use_container_width=True)
+        
+    # --- INICIO: PIE DE PÁGINA CON CRÉDITOS ---
+    st.markdown("---")  # Una línea horizontal para separar
+    st.markdown(
+        """
+        <div style='text-align: center; color: #808080;'>
+            <p>👨‍💻 Creado con ❤️ por Agus.M</p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+    # --- FIN: PIE DE PÁGINA ---
 
 else:
     st.error("No se pudieron cargar los datos necesarios. Intenta refrescar la página en unos minutos.")

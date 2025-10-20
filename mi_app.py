@@ -189,4 +189,4 @@ if datos_dolar is not None and not datos_dolar.empty and datos_pf is not None an
         st.dataframe(df_completo.sort_index(ascending=False).head(10).round(2))
 
 else:
-    st.error("No se pudieron cargar todos los datos. Intenta refrescar la página más tarde.")```
+    st.error("No se pudieron cargar todos los datos. Intenta refrescar la página más tarde.")

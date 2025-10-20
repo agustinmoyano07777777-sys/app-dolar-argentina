@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import requests
+from datetime import datetime, timedelta
 
 # --- Configuración de la Página ---
 st.set_page_config(
@@ -9,12 +10,11 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("💵 Monitor del Dólar y Plazo Fijo en Argentina")
-st.markdown("Visualización de cotizaciones históricas, spread y comparativa de rendimiento con plazos fijos.")
+st.title("💵 Monitor y Comparador: Dólar vs. Plazo Fijo")
+st.markdown("Herramienta para analizar cotizaciones históricas y comparar el rendimiento del dólar contra un plazo fijo.")
 
 # --- Funciones de Carga y Procesamiento de Datos ---
-
-@st.cache_data
+@st.cache_data(ttl=3600) # Cachear datos por 1 hora
 def cargar_datos_dolar():
     """Función para obtener y procesar las cotizaciones de dólares."""
     url = 'https://api.argentinadatos.com/v1/cotizaciones/dolares'
@@ -28,14 +28,11 @@ def cargar_datos_dolar():
         df_pivote.columns = [str(col).capitalize() for col in df_pivote.columns]
         df_pivote = df_pivote.dropna(subset=['Oficial'])
         return df_pivote
-    except requests.exceptions.RequestException as e:
-        st.error(f"Error al conectar con la API de dólares: {e}")
-        return None
     except Exception as e:
-        st.error(f"Ocurrió un error al procesar los datos del dólar: {e}")
+        st.error(f"Error al cargar datos del dólar: {e}")
         return None
 
-@st.cache_data
+@st.cache_data(ttl=3600) # Cachear datos por 1 hora
 def cargar_datos_plazo_fijo():
     """Función para obtener las tasas de plazo fijo."""
     url = 'https://api.argentinadatos.com/v1/finanzas/tasas/plazoFijo'
@@ -48,11 +45,8 @@ def cargar_datos_plazo_fijo():
         df = df.set_index('fecha')
         df = df.rename(columns={'valor': 'TNA Plazo Fijo'})
         return df
-    except requests.exceptions.RequestException as e:
-        st.error(f"Error al conectar con la API de tasas de plazo fijo: {e}")
-        return None
     except Exception as e:
-        st.error(f"Ocurrió un error al procesar los datos de plazo fijo: {e}")
+        st.error(f"Error al cargar datos de Plazo Fijo: {e}")
         return None
 
 # --- Carga de Datos ---
@@ -60,106 +54,112 @@ with st.spinner('Cargando datos históricos desde las APIs...'):
     datos_dolar = cargar_datos_dolar()
     datos_pf = cargar_datos_plazo_fijo()
 
-# Verificamos si ambos DataFrames se cargaron correctamente
 if datos_dolar is not None and not datos_dolar.empty and datos_pf is not None and not datos_pf.empty:
-    st.success("¡Datos del dólar y plazo fijo cargados correctamente!")
+    st.success("¡Datos cargados correctamente!")
 
-    df_completo = datos_dolar.join(datos_pf, how='outer').sort_index()
+    # Combinamos y preparamos el DataFrame principal
+    df_completo = datos_dolar.join(datos_pf, how='left')
+    df_completo['TNA Plazo Fijo'] = pd.to_numeric(df_completo['TNA Plazo Fijo'], errors='coerce')
     df_completo['TNA Plazo Fijo'] = df_completo['TNA Plazo Fijo'].ffill()
     df_completo = df_completo.dropna(subset=datos_dolar.columns)
 
-    # --- Gráfico de Cotizaciones Históricas ---
-    st.header("📈 Gráfico de Cotizaciones Históricas (Valor de Venta)")
-    opciones_disponibles = datos_dolar.columns.tolist()
-    opciones_preferidas = ['Oficial', 'Blue', 'Mep', 'Ccl']
-    opciones_por_defecto_hist = [opt for opt in opciones_preferidas if opt in opciones_disponibles]
-    cotizaciones_seleccionadas = st.multiselect('Selecciona las cotizaciones a visualizar:', options=opciones_disponibles, default=opciones_por_defecto_hist)
-    if cotizaciones_seleccionadas:
-        st.line_chart(datos_dolar[cotizaciones_seleccionadas])
-    else:
-        st.warning("Selecciona al menos una cotización.")
+    # --- SECCIÓN COMPARATIVA ---
+    st.header("🔬 Comparativa Histórica: Dólar vs. Plazo Fijo")
 
-    # --- Gráfico del Spread ---
-    st.header("📊 Spread vs. Dólar Oficial (%)")
-    st.markdown("Diferencia porcentual entre cada cotización y el dólar oficial.")
-    dolares_para_spread = [col for col in opciones_disponibles if col != 'Oficial']
-    spreads_preferidos = ['Blue', 'Mep', 'Ccl']
-    opciones_por_defecto_spread = [opt for opt in spreads_preferidos if opt in dolares_para_spread]
-    spreads_seleccionados = st.multiselect('Selecciona cotizaciones para ver su spread con el Oficial:', options=dolares_para_spread, default=opciones_por_defecto_spread)
-    if spreads_seleccionados:
-        df_spread = pd.DataFrame(index=datos_dolar.index)
-        for dolar in spreads_seleccionados:
-            df_spread[f'Brecha {dolar}'] = (datos_dolar[dolar] / datos_dolar['Oficial'] - 1) * 100
-        st.line_chart(df_spread)
-    else:
-        st.warning("Selecciona al menos una cotización para ver el spread.")
-
-    # --- SECCIÓN COMPARATIVA (LÓGICA CORREGIDA) ---
-    st.header("🔬 Comparativa: Dólar vs. Plazo Fijo")
-    st.markdown("Análisis histórico para determinar qué inversión fue más rentable en un período determinado.")
-
-    col1, col2 = st.columns(2)
+    # --- Controles de Usuario ---
+    st.subheader("Configuración del Análisis")
+    col1, col2, col3 = st.columns(3)
     with col1:
-        opciones_dolar_comparativa = [d for d in ['Blue', 'Mep', 'Ccl'] if d in df_completo.columns]
-        dolar_a_comparar = st.selectbox("Selecciona el tipo de dólar a comparar:", options=opciones_dolar_comparativa)
+        opciones_dolar = [d for d in ['Blue', 'Mep', 'Ccl'] if d in df_completo.columns]
+        dolar_a_comparar = st.selectbox("1. Selecciona el tipo de dólar:", options=opciones_dolar)
     with col2:
-        periodo_dias = st.number_input("Selecciona el período de análisis (días):", min_value=1, max_value=365, value=30)
+        periodo_dias = st.number_input("2. Período de inversión (días):", min_value=1, max_value=365, value=30)
+    
+    st.subheader("Filtro de Fechas")
+    col_f1, col_f2 = st.columns(2)
+    with col_f1:
+        # Usamos las fechas disponibles en nuestros datos para los selectores
+        fecha_minima = df_completo.index.min().date()
+        fecha_maxima = df_completo.index.max().date()
+        fecha_inicio = st.date_input("Mostrar resultados DESDE:", value=(fecha_maxima - timedelta(days=365)), min_value=fecha_minima, max_value=fecha_maxima)
+    with col_f2:
+        fecha_fin = st.date_input("Mostrar resultados HASTA:", value=fecha_maxima, min_value=fecha_minima, max_value=fecha_maxima)
 
-    if dolar_a_comparar and periodo_dias:
-        df_daily = df_completo[[dolar_a_comparar, 'TNA Plazo Fijo']].resample('D').ffill()
+    if dolar_a_comparar and periodo_dias and fecha_inicio <= fecha_fin:
+        # Lógica de cálculo
+        df_daily = df_completo.resample('D').ffill()
         df_daily[f'{dolar_a_comparar} Inicial'] = df_daily[dolar_a_comparar].shift(periodo_dias)
         
-        df_calculo = df_daily.loc[df_completo.index].copy()
-        df_calculo = df_calculo.sort_index(ascending=False)
-        df_calculo = df_calculo.dropna(subset=[f'{dolar_a_comparar} Inicial'])
+        df_calculo = df_daily.loc[df_completo.index].copy().sort_index(ascending=False)
+        df_calculo = df_calculo.dropna(subset=[f'{dolar_a_comparar} Inicial', 'TNA Plazo Fijo'])
         
         df_calculo['Fecha Inicial'] = df_calculo.index - pd.to_timedelta(periodo_dias, unit='d')
         df_calculo = df_calculo.rename(columns={dolar_a_comparar: f'{dolar_a_comparar} Final'})
         
+        # --- Cálculos de Rendimiento ---
         df_calculo['Variación Dólar %'] = ((df_calculo[f'{dolar_a_comparar} Final'] / df_calculo[f'{dolar_a_comparar} Inicial']) - 1) * 100
         df_calculo['Rendimiento PF %'] = (df_calculo['TNA Plazo Fijo'] / 365) * periodo_dias
+        df_calculo['Tasa Mensual (Equiv.) %'] = df_calculo['TNA Plazo Fijo'] / 12
 
+        # --- Lógica de Conclusión ---
         def determinar_ganador(row):
-            if row['Variación Dólar %'] > 1.0 and row['Variación Dólar %'] > row['Rendimiento PF %']:
+            if row['Variación Dólar %'] > row['Rendimiento PF %']:
                 return "🟢 Dólar"
-            elif row['Rendimiento PF %'] > row['Variación Dólar %']:
-                return "🔵 Plazo Fijo"
             else:
-                return "⚪ Empate / Dólar < 1%"
+                return "🔵 Plazo Fijo"
         df_calculo['Conclusión'] = df_calculo.apply(determinar_ganador, axis=1)
 
-        # --- BLOQUE CORREGIDO ---
-        # 1. Convertir el índice ('fecha') en una columna.
-        df_display = df_calculo.reset_index()
-
-        # 2. Renombrar la nueva columna 'fecha' para que sea más clara.
-        df_display = df_display.rename(columns={'fecha': 'Fecha Final'})
+        # --- Preparación del DataFrame para mostrar ---
+        df_display = df_calculo.reset_index().rename(columns={'fecha': 'Fecha Final'})
         
-        # 3. Definir el orden final de las columnas que queremos mostrar.
+        # --- Filtrado por fecha ---
+        start_date_ts = pd.Timestamp(fecha_inicio)
+        end_date_ts = pd.Timestamp(fecha_fin)
+        df_display = df_display[(df_display['Fecha Final'] >= start_date_ts) & (df_display['Fecha Final'] <= end_date_ts)]
+
         columnas_ordenadas = [
-            'Fecha Inicial', 
-            'Fecha Final',
-            f'{dolar_a_comparar} Inicial', 
-            f'{dolar_a_comparar} Final',
-            'Variación Dólar %', 
-            'Rendimiento PF %', 
-            'Conclusión'
+            'Fecha Inicial', 'Fecha Final',
+            f'{dolar_a_comparar} Inicial', f'{dolar_a_comparar} Final', 'Variación Dólar %',
+            'Tasa Mensual (Equiv.) %', 'Rendimiento PF %', 'Conclusión'
         ]
-        df_display = df_display[columnas_ordenadas]
+        
+        if not df_display.empty:
+            st.dataframe(df_display[columnas_ordenadas].style.format({
+                f'{dolar_a_comparar} Inicial': '${:,.2f}',
+                f'{dolar_a_comparar} Final': '${:,.2f}',
+                'Variación Dólar %': '{:,.2f}%',
+                'Rendimiento PF %': '{:,.2f}%',
+                'Tasa Mensual (Equiv.) %': '{:,.2f}%',
+                'Fecha Inicial': '{:%Y-%m-%d}',
+                'Fecha Final': '{:%Y-%m-%d}'
+            }), use_container_width=True)
+        else:
+            st.warning("No hay datos para mostrar en el rango de fechas seleccionado. Por favor, elige un rango más amplio.")
 
-        st.dataframe(df_display.head(20).style.format({
-            f'{dolar_a_comparar} Inicial': '${:,.2f}',
-            f'{dolar_a_comparar} Final': '${:,.2f}',
-            'Variación Dólar %': '{:,.2f}%',
-            'Rendimiento PF %': '{:,.2f}%',
-            'Fecha Inicial': '{:%Y-%m-%d}',
-            'Fecha Final': '{:%Y-%m-%d}'
-        }), use_container_width=True)
+    # --- SECCIONES ADICIONALES ---
+    with st.expander("Ver Gráficos y Datos Históricos"):
+        st.header("📈 Gráfico de Cotizaciones Históricos")
+        # (código de gráficos y tablas)
+        opciones_disponibles = datos_dolar.columns.tolist()
+        opciones_preferidas = ['Oficial', 'Blue', 'Mep', 'Ccl']
+        opciones_por_defecto_hist = [opt for opt in opciones_preferidas if opt in opciones_disponibles]
+        cotizaciones_seleccionadas = st.multiselect('Selecciona cotizaciones a visualizar:', options=opciones_disponibles, default=opciones_por_defecto_hist)
+        if cotizaciones_seleccionadas:
+            st.line_chart(datos_dolar[cotizaciones_seleccionadas])
+        
+        st.header("📊 Spread vs. Dólar Oficial (%)")
+        dolares_para_spread = [col for col in opciones_disponibles if col != 'Oficial']
+        spreads_preferidos = ['Blue', 'Mep', 'Ccl']
+        opciones_por_defecto_spread = [opt for opt in spreads_preferidos if opt in dolares_para_spread]
+        spreads_seleccionados = st.multiselect('Selecciona cotizaciones para ver su spread:', options=dolares_para_spread, default=opciones_por_defecto_spread)
+        if spreads_seleccionados:
+            df_spread = pd.DataFrame(index=datos_dolar.index)
+            for dolar in spreads_seleccionados:
+                df_spread[f'Brecha {dolar}'] = (datos_dolar[dolar] / datos_dolar['Oficial'] - 1) * 100
+            st.line_chart(df_spread)
 
-    # --- Tabla de Datos Históricos ---
-    st.header("📋 Tabla de Datos Históricos")
-    if st.checkbox('Mostrar la tabla con los últimos 10 datos'):
-        st.dataframe(df_completo.sort_index(ascending=False).head(10).round(2))
+        st.header("📋 Tabla de Datos Completos")
+        st.dataframe(df_completo.sort_index(ascending=False).head(50).round(2))
 
 else:
-    st.error("No se pudieron cargar todos los datos. Intenta refrescar la página más tarde.")
+    st.error("No se pudieron cargar los datos de una o ambas APIs. Intenta refrescar la página más tarde.")
